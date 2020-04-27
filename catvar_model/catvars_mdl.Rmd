@@ -1,0 +1,235 @@
+---
+title: "analysis"
+output: html_document
+---
+
+```{r setup, include=TRUE, echo = FALSE}
+
+setwd("C:/Users/peter/Desktop/kaggle/cat")
+
+library(dplyr)
+library(caret)
+library(pROC)
+raw_train = read.csv("train.csv")
+raw_test = read.csv("test.csv")
+#raw_test$nom_5 = as.character(raw_test$nom_5)
+#raw_test[raw_test$nom_5=='f7821e391',"nom_5"] = 'b97f51ac4' #-->weird shit
+#raw_test$nom_5 = as.factor(raw_test$nom_5)
+#table(ifelse(raw_test$nom_5=='f7821e391',1,0))
+#table(ifelse(raw_test$nom_5=='b97f51ac4',1,0))
+
+```
+
+
+
+```{r exploratory analysis, include=TRUE,echo=FALSE}
+#### Average Default by variable
+raw_train %>% group_by(bin_0) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+raw_train %>% group_by(bin_1) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+raw_train %>% group_by(bin_2) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+raw_train %>% group_by(bin_3) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+raw_train %>% group_by(bin_4) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+raw_train %>% group_by(nom_0) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+raw_train %>% group_by(nom_1) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+raw_train %>% group_by(nom_2) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+raw_train %>% group_by(nom_3) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+raw_train %>% group_by(nom_4) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+raw_train %>% group_by(nom_5) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+
+raw_train %>% group_by(ord_1) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+raw_train %>% group_by(ord_2) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+raw_train %>% group_by(ord_3) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+raw_train %>% group_by(ord_4) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+raw_train %>% group_by(ord_5) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+```
+
+
+```{r exploratory analysis, include=TRUE,echo=FALSE}
+### Create a funciton that 
+## 1)identify biggest category
+## 2)generate dummies for all categories but that one
+generate_dummies = function(dataset_clean,dataset_raw,var){
+
+  variable = dataset_raw[,var]
+  var_lvls = levels(as.factor(variable))
+  
+  variable_trn = raw_train[,var]
+  high_lvl = names(table(variable)[which.max(table(variable_trn))])
+  for(i in var_lvls){
+    if(i != high_lvl){dataset_clean = dataset_clean %>% mutate(assign(paste(var,i,sep = "_") , ifelse(variable==i,1,0)))
+                      names(dataset_clean)[ncol(dataset_clean)] = paste(var,i,sep = "_")
+                      }
+    }
+  return(dataset_clean)
+}
+
+order_nominals = function(var,var_quote,var_quote_bucket){
+  var = enquo(var)
+  tab1=raw_train %>% group_by(!!var) %>% summarise(avg_targ = mean(target),bin_size = length(target)) %>% as.data.frame
+
+  tab1 = tab1[order(tab1$avg_targ),]
+  tab1$avg_targ_rnd = round(tab1$avg_targ,digits =3)
+  tab1$newvar = rep(0,nrow(tab1))
+  for(i in 2:nrow(tab1)){
+    if(tab1$avg_targ_rnd[i]>tab1$avg_targ_rnd[i-1]){tab1$newvar[i] = tab1$newvar[i-1]+1}
+    if(tab1$avg_targ_rnd[i]==tab1$avg_targ_rnd[i-1]){tab1$newvar[i] = tab1$newvar[i-1]}
+  }
+  clean_train[,var_quote]= raw_train[,var_quote]
+  names(tab1)[1] = var_quote
+  clean_train = merge(clean_train,tab1[,c(1,5)], by = var_quote)[order(clean_train$id),]
+  index = which(names(clean_train)==var_quote)
+  clean_train = clean_train[,-c(index)]
+  names(clean_train)[which(names(clean_train)=="newvar")] = var_quote_bucket
+  return(clean_train)
+}
+
+```
+
+
+
+```{r data cleaning, include=TRUE,echo=FALSE}
+clean_data = function(input_data){
+
+clean_output = as.data.frame(input_data[,c("id")])
+names(clean_output)[1] ="id"
+
+########################
+### Binary Variables ###
+########################
+clean_output = clean_output %>% mutate(bin_0 = input_data$bin_0,
+                                     bin_1 = input_data$bin_1,
+                                     bin_2 = input_data$bin_2,
+                                     bin_3 = ifelse(input_data$bin_3 == TRUE,1,0),
+                                     bin_4 = ifelse(input_data$bin_4 == "Y",1,0))
+
+#########################
+## Nominal Variables ####
+#########################
+clean_output = generate_dummies(clean_output,input_data,"nom_0")
+clean_output = generate_dummies(clean_output,input_data,"nom_1")
+clean_output = generate_dummies(clean_output,input_data,"nom_2")
+clean_output = generate_dummies(clean_output,input_data,"nom_3")
+clean_output = generate_dummies(clean_output,input_data,"nom_4")
+clean_output = generate_dummies(clean_output,input_data,"nom_5")
+#clean_output = generate_dummies(clean_output,input_data,"nom_6")
+
+
+
+#clean_output = order_nominals(input_data$nom_6,"nom_6","nom_6_bucket")
+#clean_output = generate_dummies(clean_output,clean_output,"nom_6_bucket")
+
+#clean_output = order_nominals(input_data$nom_7,"nom_7","nom_7_bucket")
+#clean_output = order_nominals(input_data$nom_8,"nom_8","nom_8_bucket")
+#clean_output = order_nominals(input_data$nom_9,"nom_9","nom_9_bucket")
+
+###################
+#Ordinal Variables
+##################
+clean_output = clean_output %>% mutate(ord_1 = ifelse(input_data$ord_1 == "Novice",1,
+                                             ifelse(input_data$ord_1 == "Contributor",2,
+                                             ifelse(input_data$ord_1 == "Expert",3,
+                                             ifelse(input_data$ord_1 == "Master",4,
+                                             ifelse(input_data$ord_1 == "Grandmaster",5,0))))),
+                                     
+                                     ord_2 = ifelse(input_data$ord_2 == "Freezing",1,
+                                             ifelse(input_data$ord_2 == "Cold",2,
+                                             ifelse(input_data$ord_2 == "Warm",3,
+                                             ifelse(input_data$ord_2 == "Hot",4,
+                                             ifelse(input_data$ord_2 == "Boiling Hot",5,
+                                             ifelse(input_data$ord_2 == "Lava Hot",6,0)))))),
+                                     
+                                     ord_3 = as.numeric(input_data$ord_3),
+                                     ord_4 = as.numeric(input_data$ord_4)
+                                     )
+#ord_5
+term1_is_upper=grepl("^[[:upper:]]+$", substr(input_data$ord_5,1,1)) #find strings with first letter is upper
+term2_is_upper=grepl("^[[:upper:]]+$", substr(input_data$ord_5,2,2)) #find strings wtih second letter is upper
+upper_lower = ifelse(term1_is_upper == 1 & term2_is_upper == 1,1,
+              ifelse(term1_is_upper == 1 & term2_is_upper == 0,1,
+              ifelse(term1_is_upper == 0 & term2_is_upper == 1,3,
+              ifelse(term1_is_upper == 0 & term2_is_upper == 0,3,0))))
+newvar = paste(upper_lower, input_data$ord_5,sep = "")
+clean_output[,"ord_5"] = as.numeric(as.factor(newvar))
+return(clean_output)
+}
+
+
+```
+
+
+```{r prep for modeling, include=TRUE,echo=FALSE}
+
+clean_train = clean_data(raw_train)
+clean_train$target = as.factor(raw_train$target)
+partition = createDataPartition(clean_train$target, p = 0.8, list = FALSE)
+trn = clean_train[partition,]
+hld = clean_train[-partition,]
+tst = clean_data(raw_test)
+
+
+```
+
+
+```{r lasso, include=TRUE,echo=FALSE}
+number_cv  = 10
+tuneGrid = expand.grid(alpha = 1, lambda = seq(0,0.005 ,by = 0.000025))
+set.seed(2312312)
+seeds = vector(mode = "list", length = number_cv + 1)
+for( i in 1:number_cv){seeds[[i]] = sample.int(n = 1000, nrow(tuneGrid))}
+seeds[[number_cv+1]] = sample.int(100,1)
+
+tControl = trainControl(method = "repeatedcv",
+                        number = number_cv,
+                        summaryFunction = defaultSummary,
+                        verboseIter = FALSE,
+                        seeds = seeds)
+lasso_all = train(target~. ,
+                  data = trn[,-c(1)],
+                  method = "glmnet",
+                  family = "binomial",
+                  trControl = tControl,
+                  tuneGrid = tuneGrid)
+
+hld_pred_lasso = predict(lasso_all,newdata = hld,type = "prob")[,2]
+hld_auc_lasso = ModelMetrics::auc(hld$target,hld_pred_lasso)
+print(hld_auc_lasso)
+```
+
+
+```{r}
+###################################
+### Random Grid Search for RF  ####
+###################################
+number_cv  = 3
+num_tree  = 5
+
+tuneGrid <- expand.grid(mtry = seq(5,200,by = 1),splitrule = "gini",min.node.size = seq(10,100,by = 1))
+sampGrid = tuneGrid[sample(1: nrow(tuneGrid),5),]
+set.seed(2312312)
+
+seeds = vector(mode = "list", length = number_cv + 1)
+for( i in 1:number_cv){seeds[[i]] = sample.int(n = 1000, nrow(sampGrid))}
+seeds[[number_cv+1]] = sample.int(100,1)
+
+tcontrol = trainControl(method = 'cv',
+                        number = number_cv,
+                        summaryFunction=defaultSummary,
+                        verboseIter = FALSE,
+                        seeds = seeds,
+                        classProbs = TRUE,
+                        search = "grid")
+#trn$target = ifelse(trn$target=="1","Y","N")
+rf_all = train(target ~.,
+               data = trn[,-c(1)],
+               method = 'ranger',
+               trControl = tcontrol,
+               tuneGrid = sampGrid,
+               num.trees = num_tree)
+hld_pred_rf = predict(rf_all,newdata = hld,type = "prob")[,2]
+hld_auc_rf = ModelMetrics::auc(hld$target,hld_pred_rf)
+print(hld_auc_rf)
+
+
+
+
+```
